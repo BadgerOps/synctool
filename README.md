@@ -12,3 +12,9 @@ What it does:
 * Handle failure
 * Retry with exponential backoff
 * Maybe replace https://github.com/BadgerOps/epel-offline-sync ?
+
+# Notes:
+
+* I used `ollama` and `mistral:7b` inside vscode with [continue.dev](https://continue.dev) while writing this
+  * It was often wrong, so I also ended up just _reading the docs_
+* I used [urfave/cli v2](https://cli.urfave.org/v2/) because I wanted to experiment with a cli tool
