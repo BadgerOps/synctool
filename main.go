@@ -48,8 +48,6 @@ func main() {
 
 			// for each url in given file, download the given file
 			for _, url := range rawFile {
-				// download the content
-				fmt.Println(" check out the values! ", url)
 				resp, err := http.Get(url)
 				if err != nil {
 					fmt.Println("Error downloading file:", url)
