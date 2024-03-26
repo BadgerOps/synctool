@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/urfave/cli/v2"
 )
@@ -60,7 +61,12 @@ func main() {
 }
 
 func getURL(rawFile []string, outDir string) {
+	totalDownloadTime := time.Duration(0)
+	totalFileSize := int64(0)
+
 	for _, url := range rawFile {
+		startTime := time.Now()
+		fmt.Println("Downloading file from URL: ", url)
 
 		resp, err := http.Get(url)
 		if err != nil {
@@ -79,13 +85,28 @@ func getURL(rawFile []string, outDir string) {
 			fmt.Println("Error reading response body:", err)
 		}
 
-		err = writeToDir(filepath.Join(outDir, path.Base(url)), body)
+		filePath := filepath.Join(outDir, path.Base(url))
+		err = writeToDir(filePath, body)
 		if err != nil {
 			fmt.Println("Error writing to output file:", err)
 		}
 
+		// Calculate download time and file size
+		downloadTime := time.Since(startTime)
+		totalDownloadTime += downloadTime
+
+		fileInfo, err := os.Stat(filePath)
+		if err != nil {
+			fmt.Println("Error getting file info:", err)
+		} else {
+			totalFileSize += fileInfo.Size()
+		}
+
 		fmt.Printf("Downloaded and saved %s\n", url)
 	}
+
+	fmt.Printf("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
+	fmt.Printf("Total file size: %d bytes\n", totalFileSize)
 }
 
 func readFile(filePath string) ([]string, error) {
