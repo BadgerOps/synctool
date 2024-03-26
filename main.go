@@ -45,39 +45,8 @@ func main() {
 				fmt.Println("Error reading input file:", err)
 				os.Exit(1)
 			}
-			fmt.Println(rawFile)
 
-			// for each url in given file, download the given file
-			for _, url := range rawFile {
-				// download the content
-				fmt.Println(" check out the values! ", url)
-				resp, err := http.Get(url)
-				if err != nil {
-					fmt.Println("Error downloading file:", url)
-					continue
-				}
-				defer resp.Body.Close()
-
-				// check response status code
-				if resp.StatusCode != http.StatusOK {
-					fmt.Println("Error: received non-200 status code from server for file:", url)
-					continue
-				}
-
-				// read response body into a byte slice
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					fmt.Println("Error reading response body:", err)
-				}
-
-				// write to output directory using your writeToDir function
-				err = writeToDir(filepath.Join(outDir, path.Base(url)), body)
-				if err != nil {
-					fmt.Println("Error writing to output file:", err)
-				}
-
-				fmt.Printf("Downloaded and saved %s\n", url)
-			}
+			getURL(rawFile, outDir)
 			fmt.Println("Downloaded all files listed in:", c.String("file"))
 			return nil
 		},
@@ -87,6 +56,35 @@ func main() {
 	if err != nil {
 		cli.Exit(err.Error(), 1)
 		os.Exit(1)
+	}
+}
+
+func getURL(rawFile []string, outDir string) {
+	for _, url := range rawFile {
+
+		resp, err := http.Get(url)
+		if err != nil {
+			fmt.Println("Error downloading file:", url)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			fmt.Println("Error: received non-200 status code from server for file:", url)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println("Error reading response body:", err)
+		}
+
+		err = writeToDir(filepath.Join(outDir, path.Base(url)), body)
+		if err != nil {
+			fmt.Println("Error writing to output file:", err)
+		}
+
+		fmt.Printf("Downloaded and saved %s\n", url)
 	}
 }
 
