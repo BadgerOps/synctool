@@ -1,13 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/urfave/cli/v2"
 )
@@ -45,6 +45,7 @@ func main() {
 				fmt.Println("Error reading input file:", err)
 				os.Exit(1)
 			}
+			fmt.Println(rawFile)
 
 			// for each url in given file, download the given file
 			for _, url := range rawFile {
@@ -76,7 +77,6 @@ func main() {
 				}
 
 				fmt.Printf("Downloaded and saved %s\n", url)
-				return cli.Exit("Downloaded ", 0)
 			}
 			fmt.Println("Downloaded all files listed in:", c.String("file"))
 			return nil
@@ -97,21 +97,14 @@ func readFile(filePath string) ([]string, error) {
 	}
 	defer file.Close()
 
-	lines := make([]string, 0, 10) // allocate some buffer
-	buf := make([]byte, 32*1024)   // large enough buffer for reading line by line
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
 
-	for {
-		n, err := file.Read(buf)
-		if n > 0 {
-			line := strings.TrimSpace(string(buf[:n]))
-			lines = append(lines, line)
-		}
-		if err != nil {
-			if err == io.EOF {
-				break // reached EOF
-			}
-			return nil, err
-		}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 
 	return lines, nil
