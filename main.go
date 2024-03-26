@@ -13,6 +13,18 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+type DownloadProgress struct {
+	totalBytes      int64
+	downloadedBytes int64
+	startTime       time.Time
+}
+
+func (dp *DownloadProgress) DownloadRate() float64 {
+	duration := time.Since(dp.startTime).Seconds()
+	fmt.Println("setting progress update now..", dp.downloadedBytes, duration)
+	return float64(dp.downloadedBytes) / duration
+}
+
 func main() {
 	app := &cli.App{
 		Name:  "downloader",
@@ -47,6 +59,19 @@ func main() {
 				os.Exit(1)
 			}
 
+			dp := &DownloadProgress{
+				startTime: time.Now(),
+			}
+
+			go func() {
+				ticker := time.NewTicker(1 * time.Second)
+				defer ticker.Stop()
+				for range ticker.C {
+					rate := dp.DownloadRate()
+					fmt.Printf("Current download rate: %.2f bytes/sec\n", rate)
+				}
+			}()
+
 			getURL(rawFile, outDir)
 			fmt.Println("Downloaded all files listed in:", c.String("file"))
 			return nil
@@ -61,11 +86,11 @@ func main() {
 }
 
 func getURL(rawFile []string, outDir string) {
-	totalDownloadTime := time.Duration(0)
-	totalFileSize := int64(0)
 
 	for _, url := range rawFile {
-		startTime := time.Now()
+		//	startTime := time.Now()
+		totalDownloadTime := time.Duration(0)
+		totalFileSize := int64(0)
 		fmt.Println("Downloading file from URL: ", url)
 
 		resp, err := http.Get(url)
@@ -80,33 +105,46 @@ func getURL(rawFile []string, outDir string) {
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Println("Error reading response body:", err)
+		dp := &DownloadProgress{
+			totalBytes: resp.ContentLength,
+			startTime:  time.Now(),
 		}
-
+		fmt.Println("Total size is: ", resp.ContentLength)
+		// Create the output file
 		filePath := filepath.Join(outDir, path.Base(url))
-		err = writeToDir(filePath, body)
+		out, err := os.Create(filePath)
 		if err != nil {
-			fmt.Println("Error writing to output file:", err)
+			fmt.Println("Error creating output file:", err)
+			continue
+		}
+		defer out.Close()
+
+		// Read the response body in chunks, write each chunk to the file, and update dp.downloadedBytes
+		buf := make([]byte, 1024)
+		for {
+			n, err := resp.Body.Read(buf)
+			if err != nil && err != io.EOF {
+				fmt.Println("Error reading response body:", err)
+				break
+			}
+			if n == 0 {
+				break
+			}
+
+			if _, err := out.Write(buf[:n]); err != nil {
+				fmt.Println("Error writing to output file:", err)
+				break
+			}
+			//fmt.Println("downloading the resp body 1024k at a time...", n)
+
+			dp.downloadedBytes += int64(n)
+			//fmt.Println("Downloaded: ", dp.downloadedBytes)
+			//fmt.Printf("Downloaded and saved %s\n", url)
 		}
 
-		// Calculate download time and file size
-		downloadTime := time.Since(startTime)
-		totalDownloadTime += downloadTime
-
-		fileInfo, err := os.Stat(filePath)
-		if err != nil {
-			fmt.Println("Error getting file info:", err)
-		} else {
-			totalFileSize += fileInfo.Size()
-		}
-
-		fmt.Printf("Downloaded and saved %s\n", url)
+		fmt.Printf("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
+		fmt.Printf("Total file size: %d bytes\n", totalFileSize)
 	}
-
-	fmt.Printf("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
-	fmt.Printf("Total file size: %d bytes\n", totalFileSize)
 }
 
 func readFile(filePath string) ([]string, error) {
