@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -17,11 +18,22 @@ type DownloadProgress struct {
 	totalBytes      int64
 	downloadedBytes int64
 	startTime       time.Time
+	mu              sync.Mutex
+}
+
+func (dp *DownloadProgress) AddDownloadedBytes(n int) {
+	fmt.Println("Adding downloaded bytes: ", int64(n))
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	dp.downloadedBytes += int64(n)
 }
 
 func (dp *DownloadProgress) DownloadRate() float64 {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
 	duration := time.Since(dp.startTime).Seconds()
-	fmt.Println("setting progress update now..", dp.downloadedBytes, duration)
+	fmt.Println("current duration: ", duration)
+	fmt.Println("Current bytes: ", dp.downloadedBytes)
 	return float64(dp.downloadedBytes) / duration
 }
 
@@ -60,7 +72,8 @@ func main() {
 			}
 
 			dp := &DownloadProgress{
-				startTime: time.Now(),
+				startTime:       time.Now(),
+				downloadedBytes: 0,
 			}
 
 			go func() {
@@ -109,6 +122,7 @@ func getURL(rawFile []string, outDir string) {
 			totalBytes: resp.ContentLength,
 			startTime:  time.Now(),
 		}
+
 		fmt.Println("Total size is: ", resp.ContentLength)
 		// Create the output file
 		filePath := filepath.Join(outDir, path.Base(url))
@@ -135,9 +149,10 @@ func getURL(rawFile []string, outDir string) {
 				fmt.Println("Error writing to output file:", err)
 				break
 			}
+			dp.AddDownloadedBytes(n)
 			//fmt.Println("downloading the resp body 1024k at a time...", n)
 
-			dp.downloadedBytes += int64(n)
+			//dp.downloadedBytes += int64(n)
 			//fmt.Println("Downloaded: ", dp.downloadedBytes)
 			//fmt.Printf("Downloaded and saved %s\n", url)
 		}
