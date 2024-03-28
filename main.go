@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 // Use mutex to help mitigate collisions, I followed along with https://gobyexample.com/mutexes
 // Will add threading support next
+
 type DownloadProgress struct {
 	totalBytes      int64
 	downloadedBytes int64
@@ -83,7 +85,7 @@ func main() {
 				defer ticker.Stop()
 				for range ticker.C {
 					rate := dp.DownloadRate()
-					logrus.Info("Current download rate: %.2f bytes/sec\n", rate)
+					logrus.Infof("Current download rate: %.2f bytes/sec\n", rate)
 				}
 			}()
 
@@ -104,7 +106,6 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 
 	for _, url := range rawFile {
 		totalDownloadTime := time.Duration(0)
-		totalFileSize := int64(0)
 		logrus.Info("Downloading file from URL: ", url)
 
 		resp, err := http.Get(url)
@@ -149,8 +150,8 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 			dp.AddDownloadedBytes(n)
 		}
 
-		logrus.Info("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
-		logrus.Info("Total file size: %d bytes\n", totalFileSize)
+		logrus.Infof("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
+		logrus.Infof("Total file size: %d bytes\n", dp.totalBytes)
 	}
 }
 
@@ -177,13 +178,13 @@ func readFile(filePath string) ([]string, error) {
 func writeToDir(path string, data []byte) error {
 	file, err := os.Create(path)
 	if err != nil {
-		return logrus.Error("failed to open file: %w", err)
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	_, err = file.Write(data)
 	if err != nil {
-		return logrus.Error("failed writing data to file: %w", err)
+		return fmt.Errorf("failed writing data to file: %w", err)
 	}
 
 	return nil
