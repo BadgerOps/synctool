@@ -1,6 +1,7 @@
 #### synctool
 
-I'm writing this tool mostly as a way to explore golang. Don't use it!
+This tool is being written to help me with some arbitrary URL based file downloads, as well as a good excuse to experement with some different features in golang.
+
 
 What it does:
 
@@ -15,6 +16,5 @@ What it does:
 
 # Notes:
 
-* I used `ollama` and `mistral:7b` inside vscode with [continue.dev](https://continue.dev) while writing this
-  * It was often wrong, so I also ended up just _reading the docs_
-* I used [urfave/cli v2](https://cli.urfave.org/v2/) because I wanted to experiment with a cli tool
+* `--loglevel value` is added to support logrus based log levels.
+* I am using [urfave/cli v2](https://cli.urfave.org/v2/) because I wanted to experiment with a cli tool
