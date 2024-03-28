@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -84,8 +85,8 @@ func main() {
 				ticker := time.NewTicker(5 * time.Second)
 				defer ticker.Stop()
 				for range ticker.C {
-					rate := dp.DownloadRate()
-					logrus.Infof("Current download rate: %.2f bytes/sec\n", rate)
+					rate := int64(math.Round(dp.DownloadRate()))
+					logrus.Info("Current download rate: ", bytesToReadable(rate))
 				}
 			}()
 
@@ -106,6 +107,7 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 
 	for _, url := range rawFile {
 		totalDownloadTime := time.Duration(0)
+		startTime := time.Now()
 		logrus.Info("Downloading file from URL: ", url)
 
 		resp, err := http.Get(url)
@@ -149,10 +151,25 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 			}
 			dp.AddDownloadedBytes(n)
 		}
-
+		downloadTime := time.Since(startTime)
+		totalDownloadTime += downloadTime
 		logrus.Infof("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
-		logrus.Infof("Total file size: %d bytes\n", dp.totalBytes)
+		logrus.Infof("Total file size: %s\n", bytesToReadable(dp.totalBytes))
 	}
+}
+
+// https://gist.github.com/chadleeshaw/5420caa98498c46a84ce94cd9655287a convert bytes to human readable number
+func bytesToReadable(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func readFile(filePath string) ([]string, error) {
