@@ -22,18 +22,18 @@ type DownloadProgress struct {
 }
 
 func (dp *DownloadProgress) AddDownloadedBytes(n int) {
-	fmt.Println("Adding downloaded bytes: ", int64(n))
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	dp.downloadedBytes += int64(n)
+	//fmt.Println("Downloaded bytes now equal to", dp.downloadedBytes)
 }
 
 func (dp *DownloadProgress) DownloadRate() float64 {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	duration := time.Since(dp.startTime).Seconds()
-	fmt.Println("current duration: ", duration)
-	fmt.Println("Current bytes: ", dp.downloadedBytes)
+	// fmt.Println("current duration: ", duration)
+	// fmt.Println("Current bytes: ", dp.downloadedBytes)
 	return float64(dp.downloadedBytes) / duration
 }
 
@@ -77,7 +77,7 @@ func main() {
 			}
 
 			go func() {
-				ticker := time.NewTicker(1 * time.Second)
+				ticker := time.NewTicker(5 * time.Second)
 				defer ticker.Stop()
 				for range ticker.C {
 					rate := dp.DownloadRate()
@@ -85,7 +85,7 @@ func main() {
 				}
 			}()
 
-			getURL(rawFile, outDir)
+			getURL(rawFile, outDir, dp)
 			fmt.Println("Downloaded all files listed in:", c.String("file"))
 			return nil
 		},
@@ -98,10 +98,9 @@ func main() {
 	}
 }
 
-func getURL(rawFile []string, outDir string) {
+func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 
 	for _, url := range rawFile {
-		//	startTime := time.Now()
 		totalDownloadTime := time.Duration(0)
 		totalFileSize := int64(0)
 		fmt.Println("Downloading file from URL: ", url)
@@ -118,12 +117,8 @@ func getURL(rawFile []string, outDir string) {
 			continue
 		}
 
-		dp := &DownloadProgress{
-			totalBytes: resp.ContentLength,
-			startTime:  time.Now(),
-		}
-
 		fmt.Println("Total size is: ", resp.ContentLength)
+		dp.totalBytes = resp.ContentLength
 		// Create the output file
 		filePath := filepath.Join(outDir, path.Base(url))
 		out, err := os.Create(filePath)
