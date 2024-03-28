@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -11,9 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
 
+// Use mutex to help mitigate collisions, I followed along with https://gobyexample.com/mutexes
+// Will add threading support next
 type DownloadProgress struct {
 	totalBytes      int64
 	downloadedBytes int64
@@ -25,15 +27,15 @@ func (dp *DownloadProgress) AddDownloadedBytes(n int) {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	dp.downloadedBytes += int64(n)
-	//fmt.Println("Downloaded bytes now equal to", dp.downloadedBytes)
+	logrus.Trace("Downloaded bytes now equal to", dp.downloadedBytes)
 }
 
 func (dp *DownloadProgress) DownloadRate() float64 {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 	duration := time.Since(dp.startTime).Seconds()
-	// fmt.Println("current duration: ", duration)
-	// fmt.Println("Current bytes: ", dp.downloadedBytes)
+	logrus.Trace("current duration: ", duration)
+	logrus.Trace("Current bytes: ", dp.downloadedBytes)
 	return float64(dp.downloadedBytes) / duration
 }
 
@@ -67,7 +69,7 @@ func main() {
 			}
 			rawFile, err := readFile(c.String("file"))
 			if err != nil {
-				fmt.Println("Error reading input file:", err)
+				logrus.Error("Error reading input file:", err)
 				os.Exit(1)
 			}
 
@@ -81,12 +83,12 @@ func main() {
 				defer ticker.Stop()
 				for range ticker.C {
 					rate := dp.DownloadRate()
-					fmt.Printf("Current download rate: %.2f bytes/sec\n", rate)
+					logrus.Info("Current download rate: %.2f bytes/sec\n", rate)
 				}
 			}()
 
 			getURL(rawFile, outDir, dp)
-			fmt.Println("Downloaded all files listed in:", c.String("file"))
+			logrus.Info("Downloaded all files listed in:", c.String("file"))
 			return nil
 		},
 	}
@@ -103,27 +105,27 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 	for _, url := range rawFile {
 		totalDownloadTime := time.Duration(0)
 		totalFileSize := int64(0)
-		fmt.Println("Downloading file from URL: ", url)
+		logrus.Info("Downloading file from URL: ", url)
 
 		resp, err := http.Get(url)
 		if err != nil {
-			fmt.Println("Error downloading file:", url)
+			logrus.Error("Error downloading file:", url)
 			continue
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			fmt.Println("Error: received non-200 status code from server for file:", url)
+			logrus.Error("Error: received non-200 status code from server for file:", url)
 			continue
 		}
 
-		fmt.Println("Total size is: ", resp.ContentLength)
+		logrus.Trace("Total upstream file size is: ", resp.ContentLength)
 		dp.totalBytes = resp.ContentLength
 		// Create the output file
 		filePath := filepath.Join(outDir, path.Base(url))
 		out, err := os.Create(filePath)
 		if err != nil {
-			fmt.Println("Error creating output file:", err)
+			logrus.Error("Error creating output file:", err)
 			continue
 		}
 		defer out.Close()
@@ -133,7 +135,7 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 		for {
 			n, err := resp.Body.Read(buf)
 			if err != nil && err != io.EOF {
-				fmt.Println("Error reading response body:", err)
+				logrus.Error("Error reading response body:", err)
 				break
 			}
 			if n == 0 {
@@ -141,19 +143,14 @@ func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
 			}
 
 			if _, err := out.Write(buf[:n]); err != nil {
-				fmt.Println("Error writing to output file:", err)
+				logrus.Error("Error writing to output file:", err)
 				break
 			}
 			dp.AddDownloadedBytes(n)
-			//fmt.Println("downloading the resp body 1024k at a time...", n)
-
-			//dp.downloadedBytes += int64(n)
-			//fmt.Println("Downloaded: ", dp.downloadedBytes)
-			//fmt.Printf("Downloaded and saved %s\n", url)
 		}
 
-		fmt.Printf("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
-		fmt.Printf("Total file size: %d bytes\n", totalFileSize)
+		logrus.Info("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
+		logrus.Info("Total file size: %d bytes\n", totalFileSize)
 	}
 }
 
@@ -180,13 +177,13 @@ func readFile(filePath string) ([]string, error) {
 func writeToDir(path string, data []byte) error {
 	file, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+		return logrus.Error("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	_, err = file.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed writing data to file: %w", err)
+		return logrus.Error("failed writing data to file: %w", err)
 	}
 
 	return nil
