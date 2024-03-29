@@ -1,3 +1,5 @@
 https://blog.badgerops.net/content/images/2020/03/badger.png
 https://www.bobrossquotes.com/bobs/bob.png
 https://ash-speed.hetzner.com/100MB.bin
+https://ash-speed.hetzner.com/1GB.bin
+https://download.opensuse.org/distribution/leap/15.0/iso/openSUSE-Leap-15.0-NET-x86_64.iso

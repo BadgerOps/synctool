@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -17,7 +18,6 @@ import (
 )
 
 // set up log formatting and log level, I want actual timestamps
-
 func init() {
 	formatter := &logrus.TextFormatter{
 		FullTimestamp:   true,
@@ -64,14 +64,18 @@ func (dp *DownloadProgress) DownloadRate(url string) float64 {
 	return float64(dp.progress[url].downloadedBytes) / duration
 }
 
-func getURL(url string, outDir string) {
+// main function to download URL's
+// TODO: break this up a little more would probably make sense...
+func getURL(url string, outDir string, threadID int) {
 	dp := &DownloadProgress{
 		progress: make(map[string]*FileProgress),
 	}
 	totalDownloadTime := time.Duration(0)
 	startTime := time.Now()
+	// set up context and exit (cancel) for the monitorDownload goroutine
+	ctx, cancel := context.WithCancel(context.Background())
 	// start up our monitoring for this thread
-	monitorDownload(dp, url)
+	monitorDownload(ctx, dp, url, threadID)
 	logrus.Info("Downloading file from URL: ", url)
 
 	resp, err := http.Get(url)
@@ -117,18 +121,28 @@ func getURL(url string, outDir string) {
 	}
 	downloadTime := time.Since(startTime)
 	totalDownloadTime += downloadTime
+	// now exit the context when we're done so we stop logging download rate
+	cancel()
 	logrus.Infof("Total download time for url %s: %s\n", url, totalDownloadTime.Truncate(time.Second).String())
 	logrus.Infof("Total file size for url %s: %s\n", url, bytesToReadable(int64(dp.progress[url].totalBytes)))
 }
 
-func monitorDownload(dp *DownloadProgress, url string) {
+func monitorDownload(ctx context.Context, dp *DownloadProgress, url string, threadID int) {
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
-			duration := time.Since(dp.progress[url].startTime).Seconds()
-			rate := math.Round(float64(dp.progress[url].downloadedBytes))
-			logrus.Infof("Current download rate for: %s is %s/s", url, bytesToReadable(int64(rate/duration)))
+		for {
+			select {
+			case <-ctx.Done():
+				// If the context is cancelled, stop the goroutine
+				return
+			case <-ticker.C:
+				duration := time.Since(dp.progress[url].startTime).Seconds()
+				rate := math.Round(float64(dp.progress[url].downloadedBytes))
+				logrus.WithFields(logrus.Fields{
+					"threadID": threadID,
+				}).Infof("Current download rate for: %s is %s/s", url, bytesToReadable(int64(rate/duration)))
+			}
 		}
 	}()
 }
@@ -221,24 +235,25 @@ func main() {
 
 			for i := 0; i < c.Int("threads"); i++ {
 				wg.Add(1)
-				go func() {
+				go func(threadID int) {
 					defer wg.Done()
 					for url := range urlChan {
-						getURL(url, outDir)
+						getURL(url, outDir, threadID)
 						if err != nil {
-							logrus.Error(err)
+							logrus.WithFields(logrus.Fields{
+								"threadID": threadID,
+							}).Error(err)
 						}
 					}
-				}()
+				}(i)
 			}
 
 			for _, url := range rawFile {
 				urlChan <- url
 			}
 			close(urlChan)
-			//getURL(rawFile, outDir, dp)
-			logrus.Info("Downloaded all files listed in:", c.String("file"))
 			wg.Wait()
+			logrus.Info("Downloaded all files listed in:", c.String("file"))
 			return nil
 		},
 	}
