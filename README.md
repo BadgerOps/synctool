@@ -8,10 +8,12 @@ What it does:
 * Read in a `--file` `-f` `FILE` that should be newline separated URL's of files to download
 * Iterate over those url's line by line and `--output` `-o` to an `./output` directory
 
+There is an example filelist.txt with newline separated URL's showing the example of what could feasably be downloaded with this utility.
+
 #TODO: 
 
 * Handle failure
-* Retry with exponential backoff
+  * Retry with exponential backoff
 * Maybe replace https://github.com/BadgerOps/epel-offline-sync ?
 
 # Notes:
