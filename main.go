@@ -17,6 +17,7 @@ import (
 )
 
 // set up log formatting and log level, I want actual timestamps
+
 func init() {
 	formatter := &logrus.TextFormatter{
 		FullTimestamp:   true,
@@ -26,88 +27,110 @@ func init() {
 }
 
 // Use mutex to help mitigate collisions, I followed along with https://gobyexample.com/mutexes
-// Will add threading support next
-
-type DownloadProgress struct {
+type FileProgress struct {
 	totalBytes      int64
 	downloadedBytes int64
 	startTime       time.Time
-	mu              sync.Mutex
 }
 
-func (dp *DownloadProgress) AddDownloadedBytes(n int) {
+type DownloadProgress struct {
+	progress map[string]*FileProgress
+	mu       sync.Mutex
+}
+
+func (dp *DownloadProgress) AddDownloadedBytes(url string, n int) {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
-	dp.downloadedBytes += int64(n)
-	//logrus.Trace("Downloaded bytes now equal to: ", dp.downloadedBytes)
-}
-
-func (dp *DownloadProgress) DownloadRate() float64 {
-	dp.mu.Lock()
-	defer dp.mu.Unlock()
-	duration := time.Since(dp.startTime).Seconds()
-	logrus.Trace("current duration: ", duration)
-	logrus.Trace("Current bytes: ", dp.downloadedBytes)
-	return float64(dp.downloadedBytes) / duration
-}
-
-func getURL(rawFile []string, outDir string, dp *DownloadProgress) {
-
-	for _, url := range rawFile {
-		totalDownloadTime := time.Duration(0)
-		startTime := time.Now()
-		logrus.Info("Downloading file from URL: ", url)
-
-		resp, err := http.Get(url)
-		if err != nil {
-			logrus.Error("Error downloading file:", url)
-			continue
+	if _, ok := dp.progress[url]; !ok {
+		dp.progress[url] = &FileProgress{
+			totalBytes:      0,
+			downloadedBytes: 0,
+			startTime:       time.Now(),
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			logrus.Error("Error: received non-200 status code from server for file:", url)
-			continue
-		}
-
-		logrus.Trace("Total upstream file size is: ", resp.ContentLength)
-		dp.totalBytes = resp.ContentLength
-		// Create the output file
-		filePath := filepath.Join(outDir, path.Base(url))
-		out, err := os.Create(filePath)
-		if err != nil {
-			logrus.Error("Error creating output file:", err)
-			continue
-		}
-		defer out.Close()
-
-		/*
-			Read the response body in chunks
-			write each chunk to output file
-			update dp.downloadedBytes
-		*/
-		buf := make([]byte, 1024)
-		for {
-			n, err := resp.Body.Read(buf)
-			if err != nil && err != io.EOF {
-				logrus.Error("Error reading response body:", err)
-				break
-			}
-			if n == 0 {
-				break
-			}
-
-			if _, err := out.Write(buf[:n]); err != nil {
-				logrus.Error("Error writing to output file:", err)
-				break
-			}
-			dp.AddDownloadedBytes(n)
-		}
-		downloadTime := time.Since(startTime)
-		totalDownloadTime += downloadTime
-		logrus.Infof("Total download time: %s\n", totalDownloadTime.Truncate(time.Second).String())
-		logrus.Infof("Total file size: %s\n", bytesToReadable(dp.totalBytes))
 	}
+	dp.progress[url].downloadedBytes += int64(n)
+	//logrus.Trace("Downloaded bytes now equal to: ", dp.progress[url].downloadedBytes)
+}
+
+func (dp *DownloadProgress) DownloadRate(url string) float64 {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	if _, ok := dp.progress[url]; !ok {
+		return 0
+	}
+	duration := time.Since(dp.progress[url].startTime).Seconds()
+	logrus.Trace("current duration: ", duration)
+	logrus.Trace("Current bytes: ", dp.progress[url].downloadedBytes)
+	return float64(dp.progress[url].downloadedBytes) / duration
+}
+
+func getURL(url string, outDir string) {
+	dp := &DownloadProgress{
+		progress: make(map[string]*FileProgress),
+	}
+	totalDownloadTime := time.Duration(0)
+	startTime := time.Now()
+	// start up our monitoring for this thread
+	monitorDownload(dp, url)
+	logrus.Info("Downloading file from URL: ", url)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		logrus.Error("Error downloading file from URL:", url)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logrus.Error("Error: received non-200 status code from server for file:", url)
+	}
+
+	logrus.Tracef("Total upstream file size for %s is: %d", url, resp.ContentLength)
+	// Create the output file
+	filePath := filepath.Join(outDir, path.Base(url))
+	out, err := os.Create(filePath)
+	if err != nil {
+		logrus.Error("Error creating output file:", err)
+	}
+	defer out.Close()
+
+	/*
+		Read the response body in chunks
+		write each chunk to output file
+		update dp.downloadedBytes
+	*/
+	buf := make([]byte, 1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if err != nil && err != io.EOF {
+			logrus.Error("Error reading response body:", err)
+			break
+		}
+		if n == 0 {
+			break
+		}
+
+		if _, err := out.Write(buf[:n]); err != nil {
+			logrus.Error("Error writing to output file:", err)
+			break
+		}
+		dp.AddDownloadedBytes(url, n)
+	}
+	downloadTime := time.Since(startTime)
+	totalDownloadTime += downloadTime
+	logrus.Infof("Total download time for url %s: %s\n", url, totalDownloadTime.Truncate(time.Second).String())
+	logrus.Infof("Total file size for url %s: %s\n", url, bytesToReadable(int64(dp.progress[url].totalBytes)))
+}
+
+func monitorDownload(dp *DownloadProgress, url string) {
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			duration := time.Since(dp.progress[url].startTime).Seconds()
+			rate := math.Round(float64(dp.progress[url].downloadedBytes))
+			logrus.Infof("Current download rate for: %s is %s/s", url, bytesToReadable(int64(rate/duration)))
+		}
+	}()
 }
 
 // https://gist.github.com/chadleeshaw/5420caa98498c46a84ce94cd9655287a convert bytes to human readable number
@@ -170,9 +193,15 @@ func main() {
 				Usage:       "Set log level (debug, info, warn, error, fatal, panic)",
 				Destination: &logLevel,
 			},
+			&cli.IntFlag{
+				Name:  "threads",
+				Value: 4,
+				Usage: "Number of download threads",
+			},
 		},
 		Action: func(c *cli.Context) error {
-
+			urlChan := make(chan string)
+			var wg sync.WaitGroup
 			// create the output directory, if it does not exist already
 			outDir := c.String("outdir")
 			err := os.MkdirAll(outDir, 0755)
@@ -190,22 +219,26 @@ func main() {
 			}
 			logrus.SetLevel(level)
 
-			dp := &DownloadProgress{
-				startTime:       time.Now(),
-				downloadedBytes: 0,
+			for i := 0; i < c.Int("threads"); i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for url := range urlChan {
+						getURL(url, outDir)
+						if err != nil {
+							logrus.Error(err)
+						}
+					}
+				}()
 			}
 
-			go func() {
-				ticker := time.NewTicker(5 * time.Second)
-				defer ticker.Stop()
-				for range ticker.C {
-					rate := int64(math.Round(dp.DownloadRate()))
-					logrus.Info("Current download rate: ", bytesToReadable(rate))
-				}
-			}()
-
-			getURL(rawFile, outDir, dp)
+			for _, url := range rawFile {
+				urlChan <- url
+			}
+			close(urlChan)
+			//getURL(rawFile, outDir, dp)
 			logrus.Info("Downloaded all files listed in:", c.String("file"))
+			wg.Wait()
 			return nil
 		},
 	}
